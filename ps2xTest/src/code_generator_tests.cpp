@@ -205,6 +205,26 @@ void register_code_generator_tests()
                  "LWU must not sign-extend bit 31 into the allocator bitmap value");
     });
 
+    tc.Run("quadword loads and stores ignore the low four address bits", [](TestCase &t) {
+        CodeGenerator gen({}, {});
+        const std::string lq = gen.translateInstruction(makeIType(0x8F20, OPCODE_LQ, 5, 8, 0x8));
+        const std::string sq = gen.translateInstruction(makeIType(0x8F24, OPCODE_SQ, 4, 8, 0x4));
+        const std::string lqc2 = gen.translateInstruction(makeIType(0x8F28, OPCODE_LQC2, 5, 1, 0x8));
+        const std::string sqc2 = gen.translateInstruction(makeIType(0x8F2C, OPCODE_SQC2, 4, 1, 0x4));
+        const std::string lw = gen.translateInstruction(makeLw(0x8F30, 2, 5, 0x8));
+
+        t.IsTrue(lq.find("(ADD32(GPR_U32(ctx, 5), 8) & ~0xFu)") != std::string::npos,
+                 "LQ must align its effective address down to 16 bytes like the R5900");
+        t.IsTrue(sq.find("(ADD32(GPR_U32(ctx, 4), 4) & ~0xFu)") != std::string::npos,
+                 "SQ must align its effective address down to 16 bytes like the R5900");
+        t.IsTrue(lqc2.find("(ADD32(GPR_U32(ctx, 5), 8) & ~0xFu)") != std::string::npos,
+                 "LQC2 must align its effective address down to 16 bytes like the R5900");
+        t.IsTrue(sqc2.find("(ADD32(GPR_U32(ctx, 4), 4) & ~0xFu)") != std::string::npos,
+                 "SQC2 must align its effective address down to 16 bytes like the R5900");
+        t.IsTrue(lw.find("& ~0xFu") == std::string::npos,
+                 "narrower accesses must keep their exact effective address");
+    });
+
     tc.Run("SYSCALL publishes its continuation before entering the runtime", [](TestCase &t) {
         Function func;
         func.name = "syscall_resume";
