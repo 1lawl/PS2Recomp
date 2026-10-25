@@ -10,6 +10,7 @@
 #include <vector>
 #include <cstring>
 #include <chrono>
+#include <cstdlib>
 
 using namespace ps2_syscalls;
 
@@ -102,6 +103,18 @@ namespace
     void clearContext(R5900Context &ctx)
     {
         std::memset(&ctx, 0, sizeof(ctx));
+    }
+
+    void setEnvVar(const char *name, const char *value)
+    {
+#ifdef _WIN32
+        _putenv_s(name, value ? value : "");
+#else
+        if (value)
+            setenv(name, value, 1);
+        else
+            unsetenv(name);
+#endif
     }
 
     int32_t syncMc(std::vector<uint8_t> &rdram, int32_t *cmdOut = nullptr)
@@ -308,6 +321,35 @@ void register_ps2_runtime_io_tests()
             setRegU32(test.ctx, 5, PS2_FIO_O_RDONLY);
             fioOpen(test.rdram.data(), &test.ctx, &test.runtime);
             t.IsTrue(getRegS32(&test.ctx, 2) < 0, "a file that does not exist in any case should still fail");
+        });
+
+        tc.Run("PS2X_CD_IMAGE supplies the image for raw sector reads", [](TestCase &t)
+        {
+            TestContext test;
+            constexpr uint32_t kSectorSize = 2048u;
+            const std::filesystem::path image = test.paths.base / "disc.iso";
+            {
+                std::string bytes(kSectorSize * 4u, '\0');
+                std::memcpy(bytes.data() + kSectorSize * 2u, "SECTOR02", 8u);
+                std::ofstream file(image, std::ios::binary);
+                file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            }
+
+            setEnvVar("PS2X_CD_IMAGE", image.string().c_str());
+            PS2Runtime::configureIoPathsFromElf((test.paths.cdRoot / "SLES_000.00").string());
+            setEnvVar("PS2X_CD_IMAGE", nullptr);
+            t.Equals(PS2Runtime::getIoPaths().cdImage.string(),
+                     std::filesystem::absolute(image).lexically_normal().string(),
+                     "PS2X_CD_IMAGE should become the runtime CD image");
+
+            constexpr uint32_t kBufferAddr = GUEST_BUFFER_AREA_START;
+            setRegU32(test.ctx, 4, 2u);
+            setRegU32(test.ctx, 5, 1u);
+            setRegU32(test.ctx, 6, kBufferAddr);
+            ps2_stubs::sceCdRead(test.rdram.data(), &test.ctx, &test.runtime);
+            t.Equals(getRegS32(&test.ctx, 2), 1, "sceCdRead should accept an LBN inside the image");
+            t.IsTrue(std::memcmp(test.rdram.data() + kBufferAddr, "SECTOR02", 8u) == 0,
+                     "sceCdRead should copy the requested sector from the image");
         });
 
         tc.Run("mc0 directory creation", [](TestCase &t)

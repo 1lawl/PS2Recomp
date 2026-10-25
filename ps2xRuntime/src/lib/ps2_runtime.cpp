@@ -26,6 +26,7 @@
 #include <thread>
 #include <unordered_map>
 #include <sstream>
+#include <cstdlib>
 
 namespace ps2_stubs
 {
@@ -1063,6 +1064,13 @@ void PS2Runtime::configureIoPathsFromElf(const std::string &elfPath)
         paths.hostRoot = paths.elfDirectory;
         paths.cdRoot = paths.elfDirectory;
         paths.mcRoot = paths.elfDirectory / "mc0";
+    }
+
+    // Games with their own ISO9660 reader (e.g. EA titles) issue raw sector
+    // reads, which need the original disc image rather than extracted files.
+    if (const char *image = std::getenv("PS2X_CD_IMAGE"); image && *image)
+    {
+        paths.cdImage = std::filesystem::path(image);
     }
 
     setIoPaths(paths);
