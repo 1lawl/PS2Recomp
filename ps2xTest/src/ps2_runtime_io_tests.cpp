@@ -274,6 +274,42 @@ void register_ps2_runtime_io_tests()
             fioClose(owner.rdram.data(), &owner.ctx, &owner.runtime);
         });
 
+        tc.Run("cdrom0 paths match disc files regardless of letter case", [](TestCase &t)
+        {
+            TestContext test;
+            std::filesystem::create_directories(test.paths.cdRoot / "DATA");
+            {
+                std::ofstream file(test.paths.cdRoot / "DATA" / "IOP.BIG", std::ios::binary);
+                file << "BIGF";
+            }
+
+            constexpr uint32_t kPathAddr = GUEST_STRING_AREA_START;
+            constexpr uint32_t kBufferAddr = GUEST_BUFFER_AREA_START;
+            writeGuestString(test.rdram.data(), kPathAddr, "cdrom0:\\data\\iop.big;1");
+            setRegU32(test.ctx, 4, kPathAddr);
+            setRegU32(test.ctx, 5, PS2_FIO_O_RDONLY);
+            fioOpen(test.rdram.data(), &test.ctx, &test.runtime);
+            const int32_t fd = getRegS32(&test.ctx, 2);
+            t.IsTrue(fd >= 0, "a lowercase cdrom0 path should open an uppercase ISO9660 file");
+
+            setRegU32(test.ctx, 4, static_cast<uint32_t>(fd));
+            setRegU32(test.ctx, 5, kBufferAddr);
+            setRegU32(test.ctx, 6, 4u);
+            fioRead(test.rdram.data(), &test.ctx, &test.runtime);
+            t.Equals(getRegS32(&test.ctx, 2), 4, "the case-insensitively matched file should be readable");
+            t.IsTrue(std::memcmp(test.rdram.data() + kBufferAddr, "BIGF", 4u) == 0,
+                     "the matched file contents should reach the guest");
+
+            setRegU32(test.ctx, 4, static_cast<uint32_t>(fd));
+            fioClose(test.rdram.data(), &test.ctx, &test.runtime);
+
+            writeGuestString(test.rdram.data(), kPathAddr, "cdrom0:\\DATA\\MISSING.BIG;1");
+            setRegU32(test.ctx, 4, kPathAddr);
+            setRegU32(test.ctx, 5, PS2_FIO_O_RDONLY);
+            fioOpen(test.rdram.data(), &test.ctx, &test.runtime);
+            t.IsTrue(getRegS32(&test.ctx, 2) < 0, "a file that does not exist in any case should still fail");
+        });
+
         tc.Run("mc0 directory creation", [](TestCase &t)
         {
             TestContext test;
