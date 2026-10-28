@@ -289,6 +289,34 @@ void register_code_generator_tests()
                  "the syscall continuation must register to the owner wrapper");
     });
 
+    tc.Run("a resume entry never replaces another function's entry", [](TestCase &t) {
+        // A resume point can land on the first instruction of the next
+        // function (e.g. a final branch whose delay slot is that
+        // instruction). Stubs and library functions are registered after
+        // resume points, so without care the owner would take that address.
+        Function owner;
+        owner.name = "resume_owner";
+        owner.start = 0x9100;
+        owner.end = 0x9108;
+        owner.isRecompiled = true;
+        Function next;
+        next.name = "next_function";
+        next.start = 0x9108;
+        next.end = 0x9110;
+        next.isStub = true;
+
+        CodeGenerator gen({}, {});
+        gen.setRenamedFunctions({{0x9100u, "resume_owner_0x9100"}, {0x9108u, "next_function_0x9108"}});
+        gen.setResumeEntryTargets({{0x9100u, std::vector<uint32_t>{0x9104u, 0x9108u}}});
+        const std::string registration = gen.generateFunctionRegistration({owner, next}, {});
+        t.IsTrue(registration.find("g_ps2RecompiledFunctionTable[1] = resume_owner_0x9100; // 0x9104") != std::string::npos,
+                 "a resume point inside the owner should still register to the owner");
+        t.IsTrue(registration.find("g_ps2RecompiledFunctionTable[2] = next_function_0x9108; // 0x9108") != std::string::npos,
+                 "the next function's entry should stay registered to that function");
+        t.IsTrue(registration.find("resume_owner_0x9100; // 0x9108") == std::string::npos,
+                 "the owner must not take over the next function's entry");
+    });
+
     tc.Run("R5900 MULT writes rd when rd is non-zero", [](TestCase &t) {
         CodeGenerator gen({}, {});
 
