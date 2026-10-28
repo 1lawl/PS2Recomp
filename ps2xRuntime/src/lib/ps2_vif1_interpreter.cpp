@@ -434,6 +434,9 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
         }
         else if (opcode == VIF_FLUSHE || opcode == VIF_FLUSH || opcode == VIF_FLUSHA)
         {
+            // FLUSHA waits for PATH3 to finish.
+            if (opcode == VIF_FLUSHA)
+                runDeferredGifTransfers();
             continue;
         }
         else if (opcode == VIF_MSCAL || opcode == VIF_MSCALF)

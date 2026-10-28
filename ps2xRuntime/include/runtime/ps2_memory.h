@@ -431,6 +431,9 @@ public:
         std::vector<uint8_t> chainData;
     };
     std::vector<PendingTransfer> m_pendingGifTransfers;
+    // GIF (PATH3) chains started while VIF1 is stalled on a VIFcode interrupt
+    // with data left; see runDeferredGifTransfers().
+    std::vector<PendingTransfer> m_deferredGifTransfers;
     std::vector<PendingTransfer> m_pendingVif0Transfers;
     std::vector<PendingTransfer> m_pendingVif1Transfers;
     std::mutex m_completedDmacMutex;
@@ -466,6 +469,7 @@ public:
     void completeDmacChannel(uint32_t channelBase, uint32_t cause);
     void queueCompletedDmacCause(uint32_t cause);
     void resumeStalledVif1();
+    void runDeferredGifTransfers();
 };
 
 #endif // PS2_MEMORY_H
