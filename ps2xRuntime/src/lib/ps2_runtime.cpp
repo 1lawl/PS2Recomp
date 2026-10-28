@@ -606,6 +606,20 @@ void PS2Runtime::notifyIopSifTransfer(uint8_t *rdram, const ps2x::iop::SifTransf
     m_iopSubsystem->onSifTransfer(transfer);
 }
 
+uint32_t PS2Runtime::readCop0Count(R5900Context *ctx) noexcept
+{
+    if (m_eeScheduler)
+        ctx->cop0_count = static_cast<uint32_t>(m_eeScheduler->eeCycle()) + m_cop0CountBias;
+    return ctx->cop0_count;
+}
+
+void PS2Runtime::writeCop0Count(R5900Context *ctx, uint32_t value) noexcept
+{
+    ctx->cop0_count = value;
+    if (m_eeScheduler)
+        m_cop0CountBias = value - static_cast<uint32_t>(m_eeScheduler->eeCycle());
+}
+
 void PS2Runtime::advanceIopEeCycles(uint64_t eeCycles) noexcept
 {
     m_iopSubsystem->runEeCycles(eeCycles);

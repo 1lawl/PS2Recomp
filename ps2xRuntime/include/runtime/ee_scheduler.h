@@ -337,6 +337,8 @@ public:
     // Takes effect from the next scheduled VBlank (SetGsCrt picks the mode).
     void setPalVBlankRate(bool pal) noexcept;
     [[nodiscard]] std::chrono::microseconds vblankPeriod() const noexcept { return m_vblankPeriod; }
+    // EE cycles of guest time elapsed so far (advances at every checkpoint).
+    [[nodiscard]] uint64_t eeCycle() const noexcept { return m_eeCycle; }
     uint32_t setGsVSyncCallback(uint32_t callback, uint32_t gp, uint32_t sp);
 
     [[noreturn]] void waitVSync(uint64_t afterTick, int fixedResult = -1, std::function<void(R5900Context &)> completion = {});

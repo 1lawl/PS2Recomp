@@ -1049,6 +1049,16 @@ void register_code_generator_tests()
             t.IsTrue(mtc0Code.find("GPR_U32(ctx, 7)") != std::string::npos, "MTC0 should read from rt");
             t.IsTrue(mtc0Code.find("Unimplemented MTC0") == std::string::npos, "MTC0 should not hit unimplemented path");
             t.IsTrue(mtc0Code.find("Unhandled COP0") == std::string::npos, "MTC0 should not hit unhandled COP0 path");
+
+            // Count runs with the EE clock, so it goes through the runtime.
+            mfc0.rd = COP0_REG_COUNT;
+            const std::string countRead = gen.translateInstruction(mfc0);
+            t.IsTrue(countRead.find("SET_GPR_S32(ctx, 5, (int32_t)runtime->readCop0Count(ctx));") != std::string::npos,
+                     "MFC0 Count should read the runtime's cycle-based Count but got: " + countRead);
+            mtc0.rd = COP0_REG_COUNT;
+            const std::string countWrite = gen.translateInstruction(mtc0);
+            t.IsTrue(countWrite.find("runtime->writeCop0Count(ctx, GPR_U32(ctx, 7));") != std::string::npos,
+                     "MTC0 Count should rebase the runtime's Count but got: " + countWrite);
         });
 
         tc.Run("FCR access uses CFC1/CTC1", [](TestCase &t) {
