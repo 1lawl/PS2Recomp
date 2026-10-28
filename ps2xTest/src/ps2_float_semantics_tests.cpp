@@ -210,6 +210,17 @@ void register_ps2_float_semantics_tests()
             t.Equals(laneBits(flushed, 3), bitsOf(0.5f), "lane 3: 1 * 0.5 should be 0.5");
         });
 
+        tc.Run("CVT.W.S truncates toward zero and saturates", [](TestCase &t)
+        {
+            t.Equals(FPU_CVT_W_S(6.807f), 6, "6.807 should truncate to 6 (games compute log2 this way)");
+            t.Equals(FPU_CVT_W_S(8.58f), 8, "8.58 should truncate to 8");
+            t.Equals(FPU_CVT_W_S(-2.5f), -2, "-2.5 should truncate toward zero to -2");
+            t.Equals(FPU_CVT_W_S(0.999f), 0, "0.999 should truncate to 0");
+            t.Equals(FPU_CVT_W_S(floatOf(0x4F000000u)), INT32_MAX, "2^31 should saturate to INT32_MAX");
+            t.Equals(FPU_CVT_W_S(floatOf(0xCF000000u)), INT32_MIN, "-2^31 should saturate to INT32_MIN");
+            t.Equals(FPU_CVT_W_S(floatOf(kTwoPow128)), INT32_MAX, "2^128 should saturate to INT32_MAX");
+        });
+
         tc.Run("SQRT.S reads its operand from ft", [](TestCase &t)
         {
             CodeGenerator gen({}, {});
