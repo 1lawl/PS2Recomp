@@ -210,6 +210,15 @@ void register_ps2_float_semantics_tests()
             t.Equals(laneBits(flushed, 3), bitsOf(0.5f), "lane 3: 1 * 0.5 should be 0.5");
         });
 
+        tc.Run("SQRT.S reads its operand from ft", [](TestCase &t)
+        {
+            CodeGenerator gen({}, {});
+            // SQRT.S fd, ft is encoded with fs = 0.
+            const std::string sqrt = gen.translateInstruction(makeCop1S(COP1_S_SQRT, 2, 0, 4));
+            t.IsTrue(sqrt.find("ctx->f[2] = FPU_SQRT_S(ctx->f[4])") != std::string::npos,
+                     "SQRT.S should write sqrt(ft) to fd but got: " + sqrt);
+        });
+
         tc.Run("DIV.S and RSQRT.S translate to the PS2 semantics helpers", [](TestCase &t)
         {
             CodeGenerator gen({}, {});
