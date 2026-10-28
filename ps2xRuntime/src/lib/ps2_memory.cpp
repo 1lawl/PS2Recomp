@@ -3,6 +3,7 @@
 #include "runtime/gs/gs_frontend.h"
 #include "ps2_log.h"
 #include <atomic>
+#include <utility>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -1231,6 +1232,10 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
                 std::memset(&vif1_regs, 0, sizeof(vif1_regs));
                 m_vif1PendingPath2ImageQwc = 0u;
                 m_vif1PendingPath2DirectHl = false;
+                m_vif1Stalled = false;
+                m_vif1StalledData.clear();
+                m_vif1StalledOffset = 0;
+                m_vif1DmaCompletionDeferred = false;
                 m_path3Masked = false;
                 if (wasPath3Masked)
                     flushMaskedPath3Packets();
@@ -1238,6 +1243,7 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
             if (value & 0x8u) // STC
             {
                 vif1_regs.stat &= ~((1u << 8) | (1u << 9) | (1u << 10) | (1u << 11) | (1u << 12) | (1u << 13));
+                resumeStalledVif1();
             }
             break;
         case 0x10003C30u:
@@ -1896,12 +1902,41 @@ void PS2Memory::processPendingTransfers()
         m_ioRegisters[VIF0_CHANNEL + 0x00] &= ~0x100u;
         m_ioRegisters[VIF0_CHANNEL + 0x20] = 0;
     }
-    if (hadVif1)
+    if (hadVif1 && m_vif1Stalled)
+    {
+        // VIF1 stopped on a VIFcode interrupt; the channel finishes once the
+        // stalled data has been consumed after VIF1_FBRST.STC.
+        m_vif1DmaCompletionDeferred = true;
+    }
+    else if (hadVif1)
     {
         raiseDStatChannel(1u); // VIF1 channel
         queueCompletedDmacCause(1u);
         m_ioRegisters[VIF1_CHANNEL + 0x00] &= ~0x100u;
         m_ioRegisters[VIF1_CHANNEL + 0x20] = 0;
+    }
+}
+
+void PS2Memory::resumeStalledVif1()
+{
+    if (!m_vif1Stalled)
+        return;
+    m_vif1Stalled = false;
+    std::vector<uint8_t> pending;
+    pending.swap(m_vif1StalledData);
+    const size_t offset = std::exchange(m_vif1StalledOffset, size_t{0});
+    if (offset < pending.size())
+    {
+        m_vif1ResumeData = &pending;
+        processVIF1Data(pending.data() + offset, static_cast<uint32_t>(pending.size() - offset));
+        m_vif1ResumeData = nullptr;
+    }
+    if (!m_vif1Stalled && m_vif1DmaCompletionDeferred)
+    {
+        static constexpr uint32_t VIF1_CHANNEL = 0x10009000u;
+        m_vif1DmaCompletionDeferred = false;
+        m_ioRegisters[VIF1_CHANNEL + 0x20] = 0;
+        completeDmacChannel(VIF1_CHANNEL, 1u);
     }
 }
 

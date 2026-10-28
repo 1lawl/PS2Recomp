@@ -769,6 +769,26 @@ void register_ps2_memory_tests()
             t.IsTrue((mem.vif1_regs.stat & (1u << 11)) == 0u, "FBRST.STC should clear VIF1 STAT.INT");
         });
 
+        tc.Run("VIF1 stalls after an interrupt command until FBRST.STC", [](TestCase &t)
+        {
+            PS2Memory mem;
+            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
+
+            const uint32_t words[] = {
+                0x80000000u | makeVifCmd(0x00u, 0x00u, 0x0000u), // NOP with the I bit
+                makeVifCmd(0x07u, 0x00u, 0x1234u),               // MARK 0x1234
+            };
+            mem.processVIF1Data(reinterpret_cast<const uint8_t *>(words), sizeof(words));
+            t.Equals(mem.vif1_regs.mark, 0u, "commands after the interrupt should wait for the CPU");
+
+            const std::vector<uint32_t> causes = mem.consumeCompletedDmacCauses();
+            t.IsTrue(std::find(causes.begin(), causes.end(), PS2Memory::kQueuedIntcCauseFlag | 5u) != causes.end(),
+                     "the interrupt command should raise the INTC VIF1 interrupt");
+
+            t.IsTrue(mem.writeIORegister(0x10003C10u, 0x8u), "FBRST STC write should succeed");
+            t.Equals(mem.vif1_regs.mark, 0x1234u, "FBRST.STC should resume the stalled commands");
+        });
+
         tc.Run("VIF FBRST RST clears VIF1 command state", [](TestCase &t)
         {
             PS2Memory mem;

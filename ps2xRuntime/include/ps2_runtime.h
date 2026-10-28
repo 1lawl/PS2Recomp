@@ -389,6 +389,9 @@ public:
     uint32_t reserveAsyncCallbackStack(uint32_t size, uint32_t alignment = 16u);
 
     void drainCompletedDmacHandlers(uint8_t *rdram);
+    // Runs the handlers for one cause from PS2Memory::consumeCompletedDmacCauses
+    // (INTC handlers for causes flagged with kQueuedIntcCauseFlag).
+    void dispatchCompletedDmacCause(uint8_t *rdram, uint32_t cause);
 
     void requestStop();
     bool isStopRequested() const;

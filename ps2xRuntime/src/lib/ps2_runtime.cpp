@@ -1525,8 +1525,18 @@ void PS2Runtime::drainCompletedDmacHandlers(uint8_t *rdram)
 {
     for (uint32_t cause : m_memory.consumeCompletedDmacCauses())
     {
-        ps2_syscalls::dispatchDmacHandlersForCause(rdram, this, cause);
+        dispatchCompletedDmacCause(rdram, cause);
     }
+}
+
+void PS2Runtime::dispatchCompletedDmacCause(uint8_t *rdram, uint32_t cause)
+{
+    if ((cause & PS2Memory::kQueuedIntcCauseFlag) != 0u)
+    {
+        m_eeScheduler->dispatchIrq(false, cause & ~PS2Memory::kQueuedIntcCauseFlag);
+        return;
+    }
+    ps2_syscalls::dispatchDmacHandlersForCause(rdram, this, cause);
 }
 
 void PS2Runtime::handleTrap(uint8_t *rdram, R5900Context *ctx)
