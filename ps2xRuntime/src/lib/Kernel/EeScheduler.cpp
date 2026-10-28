@@ -285,6 +285,7 @@ void EeScheduler::run()
             }
             continue;
         }
+        m_runtime.clearGuestUnwind();
         PS2Runtime::RecompiledFunction function = m_runtime.lookupFunction(context.pc);
 
         if (checkpointDue(kGuestDispatchCycles))

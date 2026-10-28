@@ -1375,12 +1375,23 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
     ctx->pc = targetPc;
     const bool isCall = (kind == GuestBranchKind::DirectCall || kind == GuestBranchKind::IndirectCall);
 
+    // Returning false makes the generated caller return at once, and so on up
+    // to the scheduler, which then dispatches ctx->pc. Remember that an unwind
+    // is in progress: an enclosing call must keep unwinding even if ctx->pc
+    // happens to equal its own callee's entry (recursion), instead of taking
+    // that for "callee returned without setting pc".
+    auto unwindToScheduler = [this]()
+    {
+        m_guestUnwinding = true;
+        return false;
+    };
+
     // Every inter-function transfer is also a deterministic EE safe point.
     // Backward edges inside generated functions use eeCheckpointDue(), while
     // this charge bounds straight-line call chains that have no local loop.
     if (m_eeScheduler && m_eeScheduler->checkpointDue(EeScheduler::kGuestDispatchCycles))
     {
-        return false;
+        return unwindToScheduler();
     }
 
     if (!isCall)
@@ -1391,7 +1402,7 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
         }
 
         ctx->pc = targetPc;
-        return false;
+        return unwindToScheduler();
     }
 
     if (!hasFunction(targetPc))
@@ -1410,27 +1421,32 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
         {
             ctx->pc = targetPc;
             // if you need the app to keep open to open debug pannel change this to false
-            return false;
+            return unwindToScheduler();
         }
 
-        return false;
+        return unwindToScheduler();
     }
 
     RecompiledFunction targetFn = lookupFunction(targetPc);
     const uint32_t entryPc = ctx->pc;
     targetFn(rdram, ctx, this);
 
-    if (isStopRequested() || ctx->pc == 0u)
+    if (m_guestUnwinding || isStopRequested() || ctx->pc == 0u)
     {
-        return false;
+        return unwindToScheduler();
     }
 
+    // HLE handlers may return without setting ctx->pc.
     if (ctx->pc == entryPc)
     {
         ctx->pc = fallthroughPc;
     }
 
-    return ctx->pc == fallthroughPc;
+    if (ctx->pc != fallthroughPc)
+    {
+        return unwindToScheduler();
+    }
+    return true;
 }
 
 void PS2Runtime::SignalException(R5900Context *ctx, PS2Exception exception)
@@ -2233,7 +2249,11 @@ void PS2Runtime::postEeEvent(EeEvent event)
 
 bool PS2Runtime::eeCheckpointDue(uint32_t cycles) noexcept
 {
-    return m_eeScheduler->checkpointDue(cycles);
+    // A due checkpoint makes the generated function return to the scheduler.
+    if (!m_eeScheduler->checkpointDue(cycles))
+        return false;
+    m_guestUnwinding = true;
+    return true;
 }
 
 [[noreturn]] void PS2Runtime::eeWaitVSyncTicks(uint32_t ticks, uint32_t resumePc)
