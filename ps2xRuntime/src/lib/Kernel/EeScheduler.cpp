@@ -266,7 +266,7 @@ void EeScheduler::run()
             continue;
         }
 
-        if (!m_runtime.hasFunction(context.pc))
+        if (!m_runtime.canRunGuestCode(context.pc))
         {
             if (!running->invocations.empty())
             {

@@ -1,4 +1,5 @@
 #include "ps2_runtime.h"
+#include "runtime/ps2_ee_interpreter.h"
 #include "ps2_log.h"
 #include "ps2_stubs.h"
 #include "ps2_syscalls.h"
@@ -1131,10 +1132,33 @@ bool PS2Runtime::registerFunction(uint32_t address, RecompiledFunction func)
     return replaceFunction(address, func);
 }
 
-bool PS2Runtime::hasFunction(uint32_t address) const
+bool ps2HasRecompiledFunction(uint32_t address)
 {
     uint32_t slot = 0u;
     return generatedFunctionTableSlot(address, slot) && g_ps2RecompiledFunctionTable[slot] != nullptr;
+}
+
+// Code the game places in RAM at run time (e.g. modules linked from data
+// files) has no recompiled function; such addresses run in the interpreter.
+// PS2X_NO_INTERPRETER=1 disables this (missing-function reports instead).
+static bool isInterpretableGuestCode(const PS2Memory &memory, uint32_t address)
+{
+    // User RAM only: below 1 MB is the kernel's, and kernel-segment
+    // addresses are where interrupt handlers return (the scheduler ends an
+    // invocation when it reaches an address without a function).
+    static const bool disabled = std::getenv("PS2X_NO_INTERPRETER") != nullptr;
+    return !disabled && (address & 3u) == 0u && address >= 0x00100000u && address < PS2_RAM_SIZE &&
+           !memory.isCodeAddress(address);
+}
+
+bool PS2Runtime::hasFunction(uint32_t address) const
+{
+    return ps2HasRecompiledFunction(address);
+}
+
+bool PS2Runtime::canRunGuestCode(uint32_t address) const
+{
+    return ps2HasRecompiledFunction(address) || isInterpretableGuestCode(m_memory, address);
 }
 
 const char *describeGuestBranchKind(PS2Runtime::GuestBranchKind kind)
@@ -1168,6 +1192,18 @@ PS2Runtime::RecompiledFunction PS2Runtime::lookupFunction(uint32_t address)
         {
             return fn;
         }
+    }
+
+    if (isInterpretableGuestCode(m_memory, address))
+    {
+        static bool announced = false;
+        if (!announced)
+        {
+            announced = true;
+            std::cerr << "[ee-interp] running guest code at 0x" << std::hex << address << std::dec
+                      << " in the interpreter (no recompiled function)" << std::endl;
+        }
+        return &ps2InterpretGuestCode;
     }
 
     std::cerr << "Error: No exact recompiled function for guest PC 0x" << std::hex << address
@@ -1396,7 +1432,7 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
 
     if (!isCall)
     {
-        if (!hasFunction(targetPc))
+        if (!canRunGuestCode(targetPc))
         {
             reportMissingFunction(rdram, ctx, targetPc, sourcePc, kind, debugName);
         }
@@ -1405,7 +1441,7 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
         return unwindToScheduler();
     }
 
-    if (!hasFunction(targetPc))
+    if (!canRunGuestCode(targetPc))
     {
         reportMissingFunction(rdram, ctx, targetPc, sourcePc, kind, debugName);
 

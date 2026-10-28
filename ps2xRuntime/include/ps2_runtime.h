@@ -337,7 +337,11 @@ public:
     // TODO remove this later need to update all tests
     bool registerFunction(uint32_t address, RecompiledFunction func);
     RecompiledFunction lookupFunction(uint32_t address);
+    // True if a recompiled function starts at the address.
     bool hasFunction(uint32_t address) const;
+    // True if the address can be dispatched: a recompiled function, or RAM
+    // the EE interpreter runs (code the game builds at run time).
+    bool canRunGuestCode(uint32_t address) const;
     // The scheduler calls this before dispatching guest code (see
     // dispatchGuestBranch).
     void clearGuestUnwind() noexcept { m_guestUnwinding = false; }
