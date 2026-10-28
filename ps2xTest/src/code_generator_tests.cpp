@@ -498,6 +498,45 @@ void register_code_generator_tests()
         t.IsTrue(generated.find("label_1008:") == std::string::npos, "delay slot without incoming branch should not get a label");
     });
 
+    tc.Run("sign-testing branches compare the full 64-bit register", [](TestCase &t) {
+        // EE GPRs are 64 bits wide and BLEZ/BGTZ/BLTZ/BGEZ test bit 63, so a
+        // value like 0x0000000080000000 is positive even though its low word
+        // is negative.
+        Function func;
+        func.name = "test_func";
+        func.start = 0x1000;
+        func.end = 0x1040;
+        func.isRecompiled = true;
+        func.isStub = false;
+
+        const auto signBranch = [](uint32_t address, uint32_t opcode, uint32_t rt)
+        {
+            Instruction inst = makeBranch(address, 1);
+            inst.opcode = opcode;
+            inst.rs = 4;
+            inst.rt = rt;
+            return inst;
+        };
+        std::vector<Instruction> instructions;
+        instructions.push_back(signBranch(0x1000, OPCODE_BLEZ, 0));
+        instructions.push_back(makeNop(0x1004));
+        instructions.push_back(signBranch(0x1008, OPCODE_BGTZ, 0));
+        instructions.push_back(makeNop(0x100c));
+        instructions.push_back(signBranch(0x1010, OPCODE_REGIMM, REGIMM_BLTZ));
+        instructions.push_back(makeNop(0x1014));
+        instructions.push_back(signBranch(0x1018, OPCODE_REGIMM, REGIMM_BGEZ));
+        instructions.push_back(makeNop(0x101c));
+        instructions.push_back(makeNop(0x1020));
+
+        CodeGenerator gen({}, {});
+        const std::string generated = gen.generateFunction(func, instructions, false);
+        printGeneratedCode("sign-testing branches compare the full 64-bit register", generated);
+
+        for (const char *condition : {"GPR_S64(ctx, 4) <= 0", "GPR_S64(ctx, 4) > 0", "GPR_S64(ctx, 4) < 0", "GPR_S64(ctx, 4) >= 0"})
+            t.IsTrue(generated.find(condition) != std::string::npos, std::string("missing branch condition ") + condition);
+        t.IsTrue(generated.find("GPR_S32(ctx, 4)") == std::string::npos, "branch conditions should not truncate to 32 bits");
+    });
+
     tc.Run("labels delay slot when it is a branch target", [](TestCase &t) {
         Function func;
         func.name = "delay_slot_label";
